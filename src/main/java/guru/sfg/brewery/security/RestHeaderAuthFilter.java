@@ -1,6 +1,7 @@
 package guru.sfg.brewery.security;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.InternalAuthenticationServiceException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -36,12 +37,16 @@ public class RestHeaderAuthFilter extends AbstractAuthenticationProcessingFilter
             logger.debug("Request is to process authentication");
         }
 
-        Authentication authResult = attemptAuthentication(request, response);
-
-        if (authResult != null) {
-            successfulAuthentication(request, response, chain, authResult);
-        } else {
-            chain.doFilter(request, response);
+        try {
+            Authentication authResult = attemptAuthentication(request, response);
+            if (authResult != null) {
+                successfulAuthentication(request, response, chain, authResult);
+            } else {
+                chain.doFilter(request, response);
+            }
+        } catch (AuthenticationException e) {
+            log.error("Athentication failed", e);
+            unsuccessfulAuthentication(request, response, e);
         }
     }
 
@@ -49,19 +54,15 @@ public class RestHeaderAuthFilter extends AbstractAuthenticationProcessingFilter
     public Authentication attemptAuthentication(HttpServletRequest request, HttpServletResponse response) throws AuthenticationException, IOException, ServletException {
         String userName = getUsername(request);
         String password = getPassword(request);
-
-        if (userName == null){
+        if (userName == null) {
             userName = "";
         }
-
-        if (password == null){
+        if (password == null) {
             password = "";
         }
-
         log.debug("Authenticating User: " + userName);
-
-        UsernamePasswordAuthenticationToken token = new UsernamePasswordAuthenticationToken(userName, password);
-
+        UsernamePasswordAuthenticationToken token = new UsernamePasswordAuthenticationToken(
+                userName, password);
         if (!StringUtils.isEmpty(userName)) {
             return this.getAuthenticationManager().authenticate(token);
         } else {
@@ -81,6 +82,17 @@ public class RestHeaderAuthFilter extends AbstractAuthenticationProcessingFilter
 
         SecurityContextHolder.getContext().setAuthentication(authResult);
 
+    }
+
+    @Override
+    protected void unsuccessfulAuthentication(HttpServletRequest request, HttpServletResponse response, AuthenticationException failed) throws IOException, ServletException {
+        SecurityContextHolder.clearContext();
+        if (this.log.isDebugEnabled()) {
+            this.log.debug("Authentication request failed: " + failed.toString(), failed);
+            this.log.debug("Updated SecurityContextHolder to contain null Authentication");
+        }
+        response.sendError(HttpStatus.UNAUTHORIZED.value(),
+                HttpStatus.UNAUTHORIZED.getReasonPhrase());
     }
 
     private String getPassword(HttpServletRequest request) {
