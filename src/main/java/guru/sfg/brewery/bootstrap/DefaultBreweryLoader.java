@@ -1,26 +1,49 @@
 package guru.sfg.brewery.bootstrap;
 
 import guru.sfg.brewery.domain.*;
+import guru.sfg.brewery.domain.security.Authority;
+import guru.sfg.brewery.domain.security.Role;
+import guru.sfg.brewery.domain.security.User;
 import guru.sfg.brewery.repositories.*;
+import guru.sfg.brewery.repositories.security.AuthorityRepository;
+import guru.sfg.brewery.repositories.security.RoleRepository;
+import guru.sfg.brewery.repositories.security.UserRepository;
 import guru.sfg.brewery.web.model.BeerStyleEnum;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
+import java.util.Arrays;
 import java.util.HashSet;
+import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
-
+@Slf4j
 @RequiredArgsConstructor
 @Component
 public class DefaultBreweryLoader implements CommandLineRunner {
 
     public static final String TASTING_ROOM = "Tasting Room";
+    public static final String ST_PETE_DISTRIBUTING = "St Pete Distributing";
+    public static final String DUNEDIN_DISTRIBUTING = "Dunedin Distributing";
+    public static final String KEY_WEST_DISTRIBUTORS = "Key West Distributors";
+    public static final String STPETE_USER = "stpete";
+    public static final String DUNEDIN_USER = "dunedin";
+    public static final String KEYWEST_USER = "keywest";
+
     public static final String BEER_1_UPC = "0631234200036";
     public static final String BEER_2_UPC = "0631234300019";
     public static final String BEER_3_UPC = "0083783375213";
 
+    private final AuthorityRepository authorityRepository;
+    private final RoleRepository roleRepository;
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
     private final BreweryRepository breweryRepository;
     private final BeerRepository beerRepository;
     private final BeerInventoryRepository beerInventoryRepository;
@@ -29,11 +52,69 @@ public class DefaultBreweryLoader implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
+        loadSecurityData();
         loadBreweryData();
+        loadTastingRoomData();
         loadCustomerData();
     }
 
     private void loadCustomerData() {
+        Role customerRole = roleRepository.findByName("CUSTOMER").orElseThrow(
+                ()-> {return new NoSuchElementException("No value present.");}
+        );
+        //create customers
+        Customer stPeteCustomer = customerRepository.save(Customer.builder()
+                .customerName(ST_PETE_DISTRIBUTING)
+                .apiKey(UUID.randomUUID())
+                .build());
+
+        Customer dunedinCustomer = customerRepository.save(Customer.builder()
+                .customerName(DUNEDIN_DISTRIBUTING)
+                .apiKey(UUID.randomUUID())
+                .build());
+
+        Customer keyWestCustomer = customerRepository.save(Customer.builder()
+                .customerName(KEY_WEST_DISTRIBUTORS)
+                .apiKey(UUID.randomUUID())
+                .build());
+
+        //create users
+        User stPeteUser = userRepository.save(User.builder().username("stpete")
+                .password(passwordEncoder.encode("password"))
+                .customer(stPeteCustomer)
+                .role(customerRole).build());
+
+        User dunedinUser = userRepository.save(User.builder().username("dunedin")
+                .password(passwordEncoder.encode("password"))
+                .customer(dunedinCustomer)
+                .role(customerRole).build());
+
+        User keywest = userRepository.save(User.builder().username("keywest")
+                .password(passwordEncoder.encode("password"))
+                .customer(keyWestCustomer)
+                .role(customerRole).build());
+
+        //create orders
+        createOrder(stPeteCustomer);
+        createOrder(dunedinCustomer);
+        createOrder(keyWestCustomer);
+
+        log.debug("Orders Loaded: " + beerOrderRepository.count());
+    }
+
+    private BeerOrder createOrder(Customer customer) {
+        return  beerOrderRepository.save(BeerOrder.builder()
+                .customer(customer)
+                .orderStatus(OrderStatusEnum.NEW)
+                .beerOrderLines(Stream.of(BeerOrderLine.builder()
+                        .beer(beerRepository.findByUpc(BEER_1_UPC))
+                        .orderQuantity(2)
+                        .build()).collect(Collectors.toSet()))
+                .build());
+    }
+
+    private void loadTastingRoomData() {
+
         Customer tastingRoom = Customer.builder()
                 .customerName(TASTING_ROOM)
                 .apiKey(UUID.randomUUID())
@@ -107,5 +188,75 @@ public class DefaultBreweryLoader implements CommandLineRunner {
                     .build());
 
         }
+    }
+
+    private void loadSecurityData() {
+
+        //beer auths
+        Authority createBeer = authorityRepository.save(Authority.builder().permission("beer.create").build());
+        Authority updataBeer = authorityRepository.save(Authority.builder().permission("beer.update").build());
+        Authority readBeer = authorityRepository.save(Authority.builder().permission("beer.read").build());
+        Authority deleteBeer = authorityRepository.save(Authority.builder().permission("beer.delete").build());
+
+        //customer auths
+        Authority createCustomer = authorityRepository.save(Authority.builder().permission("customer.create").build());
+        Authority updateCustomer = authorityRepository.save(Authority.builder().permission("customer.update").build());
+        Authority readCustomer = authorityRepository.save(Authority.builder().permission("customer.read").build());
+        Authority deleteCustomer = authorityRepository.save(Authority.builder().permission("customer.delete").build());
+
+        //brewery auths
+        Authority createBrewery = authorityRepository.save(Authority.builder().permission("brewery.create").build());
+        Authority updateBrewery = authorityRepository.save(Authority.builder().permission("brewery.update").build());
+        Authority readBrewery = authorityRepository.save(Authority.builder().permission("brewery.read").build());
+        Authority deleteBrewery = authorityRepository.save(Authority.builder().permission("brewery.delete").build());
+
+        //beer order auths
+        Authority createOrder = authorityRepository.save(Authority.builder().permission("order.create").build());
+        Authority updateOrder = authorityRepository.save(Authority.builder().permission("order.update").build());
+        Authority readOrder = authorityRepository.save(Authority.builder().permission("order.read").build());
+        Authority deleteOrder = authorityRepository.save(Authority.builder().permission("order.delete").build());
+        Authority pickupOrder = authorityRepository.save(Authority.builder().permission("order.pickup").build());
+        Authority createOrderCustomer = authorityRepository.save(Authority.builder().permission("customer.order.create").build());
+        Authority updateOrderCustomer = authorityRepository.save(Authority.builder().permission("customer.order.update").build());
+        Authority readOrderCustomer = authorityRepository.save(Authority.builder().permission("customer.order.read").build());
+        Authority deleteOrderCustomer = authorityRepository.save(Authority.builder().permission("customer.order.delete").build());
+        Authority pickupOrderCustomer = authorityRepository.save(Authority.builder().permission("customer.order.pickup").build());
+
+        Role adminRole = roleRepository.save(Role.builder().name("ADMIN").build());
+        Role userRole = roleRepository.save(Role.builder().name("USER").build());
+        Role customerRole = roleRepository.save(Role.builder().name("CUSTOMER").build());
+
+        adminRole.setAuthorities(Stream.of(
+                createBeer, updataBeer, deleteBeer, readBeer,
+                createCustomer,deleteCustomer,updateCustomer,readCustomer,
+                createBrewery,deleteBrewery,updateBrewery,readBrewery,
+                createOrder,deleteOrder,updateOrder,readOrder,pickupOrder)
+                .collect(Collectors.toSet()));
+        customerRole.setAuthorities(Stream.of(readBeer,readBrewery,readCustomer,
+                createOrderCustomer,deleteOrderCustomer,readOrderCustomer,updateOrderCustomer,pickupOrderCustomer)
+                .collect(Collectors.toSet()));
+        userRole.setAuthorities(Stream.of(readBeer).collect(Collectors.toSet()));
+
+        roleRepository.saveAll(Arrays.asList(adminRole,userRole,customerRole));
+
+        userRepository.save(User.builder()
+                .username("spring")
+                .password(passwordEncoder.encode("guru"))
+                .role(adminRole)
+                .build());
+
+        userRepository.save(User.builder()
+                .username("user")
+                .password(passwordEncoder.encode("password"))
+                .role(userRole)
+                .build());
+
+        userRepository.save(User.builder()
+                .username("scott")
+                .password(passwordEncoder.encode("tiger"))
+                .role(customerRole)
+                .build());
+
+        log.debug("Users Loaded: " + userRepository.count());
     }
 }
